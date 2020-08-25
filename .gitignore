@@ -9,3 +9,5 @@ examples/peripherals/gpio/build/
 examples/peripherals/mcpwm/mcpwm_servo_control/build/
 
 examples/protocols/sockets/udp_client/build/
+
+examples/system/freertos/real_time_stats/build/

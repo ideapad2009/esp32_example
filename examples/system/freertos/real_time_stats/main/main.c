@@ -57,6 +57,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
 
     //Allocate array to store current task states
     start_array_size = uxTaskGetNumberOfTasks() + ARRAY_SIZE_OFFSET;
+    printf(">>>>>>当前任务数:%d-----1\n",start_array_size);
     start_array = malloc(sizeof(TaskStatus_t) * start_array_size);
     if (start_array == NULL) {
         ret = ESP_ERR_NO_MEM;
@@ -64,6 +65,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
     }
     //Get current task states
     start_array_size = uxTaskGetSystemState(start_array, start_array_size, &start_run_time);
+    printf(">>>>>>获取到状态的任务数:%d-----2\n",start_array_size);
     if (start_array_size == 0) {
         ret = ESP_ERR_INVALID_SIZE;
         goto exit;
@@ -72,7 +74,8 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
     vTaskDelay(xTicksToWait);
 
     //Allocate array to store tasks states post delay
-    end_array_size = uxTaskGetNumberOfTasks() + ARRAY_SIZE_OFFSET;
+    end_array_size = uxTaskGetNumberOfTasks() + ARRAY_SIZE_OFFSET; 
+    printf(">>>>>>当前任务数:%d-----1\n",end_array_size);
     end_array = malloc(sizeof(TaskStatus_t) * end_array_size);
     if (end_array == NULL) {
         ret = ESP_ERR_NO_MEM;
@@ -80,19 +83,22 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
     }
     //Get post delay task states
     end_array_size = uxTaskGetSystemState(end_array, end_array_size, &end_run_time);
+    printf(">>>>>>获取到状态的任务数:%d-----2\n",end_array_size);
     if (end_array_size == 0) {
         ret = ESP_ERR_INVALID_SIZE;
         goto exit;
     }
 
     //Calculate total_elapsed_time in units of run time stats clock period.
-    uint32_t total_elapsed_time = (end_run_time - start_run_time);
+    uint32_t total_elapsed_time = (end_run_time - start_run_time); 
+    printf(">>>>>>耗费总时间:%d-----2\n",total_elapsed_time);
     if (total_elapsed_time == 0) {
         ret = ESP_ERR_INVALID_STATE;
         goto exit;
     }
 
-    printf("| Task | Run Time | Percentage\n");
+    printf("打印任务信息---------------------------------\n");
+    printf("| 任务名 | 运行时间 | 占用总时间百分比\n");
     //Match each task in start_array to those in the end_array
     for (int i = 0; i < start_array_size; i++) {
         int k = -1;
@@ -109,7 +115,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         if (k >= 0) {
             uint32_t task_elapsed_time = end_array[k].ulRunTimeCounter - start_array[i].ulRunTimeCounter;
             uint32_t percentage_time = (task_elapsed_time * 100UL) / (total_elapsed_time * portNUM_PROCESSORS);
-            printf("| %s | %d | %d%%\n", start_array[i].pcTaskName, task_elapsed_time, percentage_time);
+            printf("| %s | %d | %d\n", start_array[i].pcTaskName, task_elapsed_time, percentage_time);
         }
     }
 
@@ -135,11 +141,14 @@ exit:    //Common return path
 static void spin_task(void *arg)
 {
     xSemaphoreTake(sync_spin_task, portMAX_DELAY);
+    TaskHandle_t xTaskToQuery = xTaskGetCurrentTaskHandle();
+    printf(">占用计数型信号值  >>>>%s\n",pcTaskGetTaskName(xTaskToQuery));
     while (1) {
         //Consume CPU cycles
         for (int i = 0; i < SPIN_ITER; i++) {
             __asm__ __volatile__("NOP");
         }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -147,10 +156,12 @@ static void spin_task(void *arg)
 static void stats_task(void *arg)
 {
     xSemaphoreTake(sync_stats_task, portMAX_DELAY);
-
+    
     //Start all the spin tasks
     for (int i = 0; i < NUM_OF_SPIN_TASKS; i++) {
         xSemaphoreGive(sync_spin_task);
+        printf(">释放计数型信号值  >>>>%s\n",pcTaskGetTaskName(xTaskGetCurrentTaskHandle()));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     //Print real time stats periodically
@@ -172,15 +183,22 @@ void app_main()
 
     //Create semaphores to synchronize
     sync_spin_task = xSemaphoreCreateCounting(NUM_OF_SPIN_TASKS, 0);
+    printf(">>>创建计数型信号量\n");
+
+
     sync_stats_task = xSemaphoreCreateBinary();
+    printf(">>>>>创建二值信号量\n");
 
     //Create spin tasks
     for (int i = 0; i < NUM_OF_SPIN_TASKS; i++) {
         snprintf(task_names[i], configMAX_TASK_NAME_LEN, "spin%d", i);
-        xTaskCreatePinnedToCore(spin_task, task_names[i], 1024, NULL, SPIN_TASK_PRIO, NULL, tskNO_AFFINITY);
+        xTaskCreatePinnedToCore(spin_task, task_names[i], 2048, NULL, SPIN_TASK_PRIO, NULL, tskNO_AFFINITY);
+        printf(">创建创建任务:%s    >>调用的是同一个任务函数\n",task_names[i]);
     }
 
     //Create and start stats task
+    printf(">创建状态任务:%s\n","stats");
     xTaskCreatePinnedToCore(stats_task, "stats", 4096, NULL, STATS_TASK_PRIO, NULL, tskNO_AFFINITY);
+    printf(">>>>>释放二值信号量:\n");
     xSemaphoreGive(sync_stats_task);
 }
